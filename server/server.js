@@ -9,44 +9,46 @@ dotenv.config();
 
 const app = express();
 
-// ⭐ Allowed origins (production + local dev)
+// ========================= CORS FIX =========================
+
+// Allow your frontend (Vercel), localhost, and no-origin tools like POSTMAN
 const allowedOrigins = [
-  process.env.FRONTEND_URL, // Vercel frontend
-  "http://localhost:3000",  // Local frontend
+  process.env.FRONTEND_URL,   // Your Vercel URL from .env
+  "http://localhost:3000",    // Local frontend
+  undefined,                  // For Postman / server-side calls
+  null
 ];
 
-// ⭐ CORS middleware
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (Postman, server-to-server)
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.indexOf(origin) === -1) {
-        const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
-        return callback(new Error(msg), false);
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.log("❌ Blocked by CORS:", origin);
+        callback(null, false); // No error—just block silently
       }
-      return callback(null, true);
     },
+    credentials: true,
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"],
   })
 );
 
+// ============================================================
+
 app.use(express.json());
 
 const PORT = process.env.PORT || 5000;
 
-// ⭐ Connect to MongoDB
-mongoose
-  .connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => console.log("MongoDB connected"))
-  .catch((err) => console.error("MongoDB Error:", err));
+// ==================== MONGO CONNECT ==========================
 
-// ================= ROUTES =================
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => console.error("❌ MongoDB Error:", err));
+
+// ==================== ROUTES ================================
 
 // ➤ POST /submit
 app.post("/submit", async (req, res) => {
@@ -55,7 +57,7 @@ app.post("/submit", async (req, res) => {
     await submission.save();
     res.status(201).json(submission);
   } catch (err) {
-    console.error("Submit Error:", err);
+    console.error("❌ Submit Error:", err);
     res.status(400).json({ error: err.message });
   }
 });
@@ -66,7 +68,7 @@ app.get("/submissions", async (req, res) => {
     const submissions = await Submission.find().sort({ createdAt: -1 });
     res.json(submissions);
   } catch (err) {
-    console.error("Fetch Error:", err);
+    console.error("❌ Fetch Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -94,15 +96,15 @@ app.get("/download", async (req, res) => {
 
     res.download(filePath);
   } catch (err) {
-    console.error("Excel Error:", err);
+    console.error("❌ Excel Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ROOT
+// ➤ Health Route
 app.get("/", (req, res) => {
-  res.send("Backend running successfully 🚀");
+  res.status(200).send("Backend running successfully 🚀");
 });
 
-// START SERVER
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// ==================== START SERVER ===========================
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
