@@ -9,15 +9,12 @@ dotenv.config();
 
 const app = express();
 
-// ✅ FIXED CORS for Vercel + Localhost
+// ⭐ FIXED: CORS FOR VERCEL + RENDER (Universal Allow)
 app.use(
   cors({
-    origin: [
-      "http://localhost:3000",
-      "https://notebook-frontend.vercel.app",   // <-- UPDATE this to your real Vercel domain
-      "https://*.vercel.app",                   // allow all vercel preview domains
-    ],
+    origin: "*",
     methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type"],
   })
 );
 
@@ -25,36 +22,38 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 5000;
 
-// Connect to MongoDB
+// ⭐ CONNECT MONGODB
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
-  .catch((err) => console.error(err));
+  .catch((err) => console.error("MongoDB Error:", err));
 
-// Routes -----------------------------------------------------
+// ⭐ ROUTES -----------------------------------------------------
 
-// Submit new entry
+// ➤ Save Submission
 app.post("/submit", async (req, res) => {
   try {
     const submission = new Submission(req.body);
     await submission.save();
     res.status(201).json(submission);
   } catch (err) {
+    console.error("Submit Error:", err);
     res.status(400).json({ error: err.message });
   }
 });
 
-// Get all submissions
+// ➤ Get all submissions
 app.get("/submissions", async (req, res) => {
   try {
     const submissions = await Submission.find().sort({ createdAt: -1 });
     res.json(submissions);
   } catch (err) {
+    console.error("Fetch Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Download Excel file
+// ➤ Download Excel
 app.get("/download", async (req, res) => {
   try {
     const submissions = await Submission.find();
@@ -77,14 +76,15 @@ app.get("/download", async (req, res) => {
 
     res.download(filePath);
   } catch (err) {
+    console.error("Excel Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Default route
+// ROOT ROUTE
 app.get("/", (req, res) => {
   res.send("Backend running successfully 🚀");
 });
 
-// Start server
+// ⭐ START SERVER
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
