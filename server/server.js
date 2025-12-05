@@ -53,7 +53,17 @@ mongoose
 // ➤ POST /submit
 app.post("/submit", async (req, res) => {
   try {
-    const submission = new Submission(req.body);
+    // Interpret the incoming datetime-local as IST using toLocaleString with timeZone
+    // This converts the incoming string into a locale string in IST, then new Date(...) makes a Date object for that IST moment
+    const correctedISTDate = new Date(
+      new Date(req.body.date).toLocaleString("en-GB", { timeZone: "Asia/Kolkata" })
+    );
+
+    const submission = new Submission({
+      ...req.body,
+      date: correctedISTDate, // save date interpreted as IST
+    });
+
     await submission.save();
     res.status(201).json(submission);
   } catch (err) {
@@ -61,6 +71,7 @@ app.post("/submit", async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+
 
 // ➤ GET /submissions
 app.get("/submissions", async (req, res) => {

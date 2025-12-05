@@ -32,13 +32,13 @@ const SubmissionForm = () => {
   const [summary, setSummary] = useState({});
 
   const names = [
-    "Siddhesh Bhau",
-    "Omkar Tatya",
-    "Saurabh Dada",
-    "Soham Baba",
-    "Vaibhav Appa",
-    "Dhanashri Tai",
-    "Shivani Didi"
+    "Siddhesh",
+    "Omkar",
+    "Saurabh",
+    "Soham",
+    "Vaibhav",
+    "Dhanashri",
+    "Shivani"
   ];
 
   const paymentModes = ["Online", "Cash"];
@@ -119,7 +119,7 @@ const SubmissionForm = () => {
       {popup && <div className="popup">Form Submitted Successfully ✅</div>}
 
       <div className="card">
-        <h2 className="h1">Submission Form</h2>
+        <h2 className="h1">Payment Receipt</h2>
 
         <form onSubmit={handleSubmit} className="form-grid">
           <div className="field">
@@ -185,7 +185,7 @@ const SubmissionForm = () => {
           </div>
 
           <div className="field full">
-            <label>Description</label>
+            <label>Purpose</label>
             <textarea
               name="description"
               rows="2"
@@ -237,7 +237,7 @@ const SubmissionForm = () => {
 
       {/* SUBMISSIONS TABLE */}
       <div className="card">
-        <h3 className="h1">Submissions</h3>
+        <h3 className="h1">Payments</h3>
         <div className="table-wrap">
           <table>
             <thead>
@@ -247,7 +247,7 @@ const SubmissionForm = () => {
                 <th>Location</th>
                 <th>Amount</th>
                 <th>Payment Mode</th>
-                <th>Description</th>
+                <th>Purpose</th>
                 <th>WhatsApp</th>
               </tr>
             </thead>
