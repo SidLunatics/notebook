@@ -11,11 +11,10 @@ const app = express();
 
 // ========================= CORS FIX =========================
 
-// Allow your frontend (Vercel), localhost, and no-origin tools like POSTMAN
 const allowedOrigins = [
-  process.env.FRONTEND_URL,   // Your Vercel URL from .env
-  "http://localhost:3000",    // Local frontend
-  undefined,                  // For Postman / server-side calls
+  process.env.FRONTEND_URL,
+  "http://localhost:3000",
+  undefined,
   null
 ];
 
@@ -26,7 +25,7 @@ app.use(
         callback(null, true);
       } else {
         console.log("❌ Blocked by CORS:", origin);
-        callback(null, false); // No error—just block silently
+        callback(null, false);
       }
     },
     credentials: true,
@@ -34,8 +33,6 @@ app.use(
     allowedHeaders: ["Content-Type"],
   })
 );
-
-// ============================================================
 
 app.use(express.json());
 
@@ -53,25 +50,23 @@ mongoose
 // ➤ POST /submit
 app.post("/submit", async (req, res) => {
   try {
-    // Interpret the incoming datetime-local as IST using toLocaleString with timeZone
-    // This converts the incoming string into a locale string in IST, then new Date(...) makes a Date object for that IST moment
-    const correctedISTDate = new Date(
-      new Date(req.body.date).toLocaleString("en-GB", { timeZone: "Asia/Kolkata" })
-    );
+    // ⛔ No timezone conversion
+    // ⛔ No -330 minutes adjustment
+    // ✅ Store exactly same time entered or auto-filled
 
     const submission = new Submission({
       ...req.body,
-      date: correctedISTDate, // save date interpreted as IST
+      date: new Date(req.body.date),
     });
 
     await submission.save();
     res.status(201).json(submission);
+
   } catch (err) {
     console.error("❌ Submit Error:", err);
     res.status(400).json({ error: err.message });
   }
 });
-
 
 // ➤ GET /submissions
 app.get("/submissions", async (req, res) => {

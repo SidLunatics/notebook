@@ -3,13 +3,24 @@ import axios from "axios";
 import "./SubmissionForm.css";
 
 const SubmissionForm = () => {
-  // Accurate IST Time
+
+  // ============================
+  // GET ACCURATE IST TIME (AUTO)
+  // ============================
   const getISTDateTime = () => {
     const now = new Date();
-    const istString = now.toLocaleString("en-GB", { timeZone: "Asia/Kolkata" });
-    const [datePart, timePart] = istString.split(", ");
-    const [day, month, year] = datePart.split("/");
-    const [hours, minutes] = timePart.split(":");
+
+    // Convert system time → IST (UTC+5:30)
+    const istOffset = 330; // minutes
+    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+    const istDate = new Date(utc + istOffset * 60000);
+
+    const year = istDate.getFullYear();
+    const month = String(istDate.getMonth() + 1).padStart(2, "0");
+    const day = String(istDate.getDate()).padStart(2, "0");
+    const hours = String(istDate.getHours()).padStart(2, "0");
+    const minutes = String(istDate.getMinutes()).padStart(2, "0");
+
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
 
@@ -25,11 +36,9 @@ const SubmissionForm = () => {
   });
 
   const [submissions, setSubmissions] = useState([]);
-
-  // eslint-disable-next-line no-unused-vars
   const [popup, setPopup] = useState(false);
-
   const [summary, setSummary] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const names = [
     "Siddhesh",
@@ -43,9 +52,10 @@ const SubmissionForm = () => {
 
   const paymentModes = ["Online", "Cash"];
 
+  // ============================
   // GPS + Fetch Submissions
+  // ============================
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition((pos) => {
         setForm((prev) => ({
@@ -58,7 +68,9 @@ const SubmissionForm = () => {
     fetchSubmissions();
   }, []);
 
+  // ============================
   // Fetch backend data
+  // ============================
   const fetchSubmissions = async () => {
     try {
       const res = await axios.get(`${API}/submissions`);
@@ -69,7 +81,9 @@ const SubmissionForm = () => {
     }
   };
 
+  // ============================
   // Auto calculate summary
+  // ============================
   const calculateSummary = (data) => {
     const totals = {};
     data.forEach((item) => {
@@ -79,20 +93,28 @@ const SubmissionForm = () => {
     setSummary(totals);
   };
 
+  // ============================
   // Handle input fields
+  // ============================
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Submit form
+  // ============================
+  // Submit form (PREVENT MULTIPLE)
+  // ============================
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
     try {
       await axios.post(`${API}/submit`, form);
 
       setPopup(true);
-      setTimeout(() => setPopup(false), 2500);
+      setTimeout(() => setPopup(false), 3000);
 
       setForm({
         name: "",
@@ -107,9 +129,15 @@ const SubmissionForm = () => {
     } catch (err) {
       alert("Error submitting form");
     }
+
+    setTimeout(() => {
+      setIsSubmitting(false);
+    }, 3000);
   };
 
+  // ============================
   // Excel download
+  // ============================
   const handleDownload = () => {
     window.open(`${API}/download`, "_blank");
   };
@@ -195,12 +223,18 @@ const SubmissionForm = () => {
           </div>
 
           <div className="field full" style={{ display: "flex", gap: 10 }}>
-            <button type="submit" className="btn btn-primary">Submit</button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "Submitting..." : "Submit"}
+            </button>
+
             <button type="button" onClick={handleDownload} className="btn btn-ghost">
               Download Excel
             </button>
           </div>
-
         </form>
       </div>
 
@@ -256,7 +290,11 @@ const SubmissionForm = () => {
               {submissions.map((s) => (
                 <tr key={s._id}>
                   <td>{s.name}</td>
-                  <td>{new Date(s.date).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</td>
+                  <td>
+                    {new Date(s.date).toLocaleString("en-IN", {
+                      timeZone: "Asia/Kolkata",
+                    })}
+                  </td>
                   <td>{s.location}</td>
                   <td>{s.amount}</td>
                   <td>{s.paymentMode}</td>
@@ -271,7 +309,9 @@ Submission Details 📝
 Name: ${s.name}
 Amount: ₹${s.amount}
 Payment Mode: ${s.paymentMode}
-Date & Time: ${new Date(s.date).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+Date & Time: ${new Date(s.date).toLocaleString("en-IN", {
+                          timeZone: "Asia/Kolkata",
+                        })}
 Location: ${s.location}
 Description: ${s.description || "N/A"}
                         `;
@@ -287,11 +327,9 @@ Description: ${s.description || "N/A"}
                 </tr>
               ))}
             </tbody>
-
           </table>
         </div>
       </div>
-
     </div>
   );
 };
