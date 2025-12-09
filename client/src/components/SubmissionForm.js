@@ -21,6 +21,23 @@ const SubmissionForm = () => {
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
 
+  // INPUT HANDLER
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Toggle split UI
+  const toggleSplit = () => {
+    setSplitEnabled((s) => !s);
+    setSplitDropdownOpen(true);
+  };
+
+  // Toggle a name in the split selection
+  const toggleSelectName = (n) => {
+    setSplitSelected((prev) => ({ ...prev, [n]: !prev[n] }));
+  };
+
   const API = process.env.REACT_APP_API_URL;
 
   const [form, setForm] = useState({
@@ -36,8 +53,10 @@ const SubmissionForm = () => {
   const [popup, setPopup] = useState(false);
   const [summary, setSummary] = useState({});
   const [settlements, setSettlements] = useState([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
+  const [paidTotalsState, setPaidTotalsState] = useState({});
+  const [splitEnabled, setSplitEnabled] = useState(false);
+  const [splitDropdownOpen, setSplitDropdownOpen] = useState(false);
+  // list of participant names (used by splitSelected initializer)
   const names = [
     'Siddhesh',
     'Omkar',
@@ -47,6 +66,14 @@ const SubmissionForm = () => {
     'Dhanashri',
     'Shivani',
   ];
+
+  const [splitSelected, setSplitSelected] = useState(() => {
+    const map = {};
+    // default all selected
+    names.forEach((n) => (map[n] = true));
+    return map;
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const paymentModes = ['Online', 'Cash'];
 
   // FETCH GPS + SUBMISSIONS
@@ -77,76 +104,89 @@ const SubmissionForm = () => {
 
   // AUTO CALCULATE SUMMARY
   const calculateSummary = (data) => {
-    const totals = {};
-    data.forEach((item) => {
-      if (!totals[item.name]) totals[item.name] = 0;
-      totals[item.name] += Number(item.amount);
+    // paidTotals: how much each person actually paid
+    // consumedTotals: how much each person should bear
+    const paidTotals = {};
+    const consumedTotals = {};
+    names.forEach((n) => {
+      paidTotals[n] = 0;
+      consumedTotals[n] = 0;
     });
-    setSummary(totals);
-    // compute settlements to equally distribute total among participants
-    const computeSettlements = (totalsMap) => {
-      const names = Object.keys(totalsMap);
-      if (names.length === 0) return [];
 
-      const entries = names.map((n) => ({
-        name: n,
-        amount: Number(totalsMap[n] || 0),
-      }));
-      const total = entries.reduce((s, e) => s + e.amount, 0);
-      const avg = total / entries.length;
+    data.forEach((item) => {
+      const payer = item.name;
+      const amount = Number(item.amount) || 0;
+      if (paidTotals[payer] == null) paidTotals[payer] = 0;
+      paidTotals[payer] += amount;
 
-      // nets: positive => should receive, negative => should pay
-      const nets = entries.map((e) => ({
-        name: e.name,
-        net: +(e.amount - avg).toFixed(2),
-      }));
-
-      const creditors = nets.filter((n) => n.net > 0).map((n) => ({ ...n }));
-      const debtors = nets.filter((n) => n.net < 0).map((n) => ({ ...n }));
-
-      // sort creditors descending, debtors ascending (most negative first)
-      creditors.sort((a, b) => b.net - a.net);
-      debtors.sort((a, b) => a.net - b.net);
-
-      const tx = [];
-
-      let i = 0;
-      let j = 0;
-
-      while (i < debtors.length && j < creditors.length) {
-        const debtor = debtors[i];
-        const creditor = creditors[j];
-        const payAmount = Math.min(Math.abs(debtor.net), creditor.net);
-
-        if (payAmount > 0.009) {
-          tx.push({
-            from: debtor.name,
-            to: creditor.name,
-            amount: +payAmount.toFixed(2),
-          });
-        }
-
-        // update nets
-        debtor.net += payAmount; // debtor.net is negative
-        creditor.net -= payAmount;
-
-        // advance pointers
-        if (Math.abs(debtor.net) < 0.01) i++;
-        if (creditor.net < 0.01) j++;
+      if (
+        item.splitWith &&
+        Array.isArray(item.splitWith) &&
+        item.splitWith.length > 0
+      ) {
+        const share =
+          item.splitShare != null
+            ? Number(item.splitShare)
+            : +(amount / item.splitWith.length).toFixed(2);
+        item.splitWith.forEach((p) => {
+          if (consumedTotals[p] == null) consumedTotals[p] = 0;
+          consumedTotals[p] += Number(share);
+        });
+      } else {
+        if (consumedTotals[payer] == null) consumedTotals[payer] = 0;
+        consumedTotals[payer] += amount;
       }
+    });
 
-      return { total: +total.toFixed(2), avg: +avg.toFixed(2), nets, tx };
-    };
+    // show consumed totals in Name-wise table
+    setSummary(consumedTotals);
+    // also expose paid totals so the UI can show Paid vs Share
+    setPaidTotalsState(paidTotals);
 
-    const settlementResult = computeSettlements(totals);
-    setSettlements(settlementResult);
+    // compute nets and suggested transfers
+    const netsArr = names.map((n) => ({
+      name: n,
+      net: +((paidTotals[n] || 0) - (consumedTotals[n] || 0)).toFixed(2),
+    }));
+    const creditors = netsArr.filter((x) => x.net > 0).map((x) => ({ ...x }));
+    const debtors = netsArr.filter((x) => x.net < 0).map((x) => ({ ...x }));
+    creditors.sort((a, b) => b.net - a.net);
+    debtors.sort((a, b) => a.net - b.net);
+
+    const tx = [];
+    let i = 0,
+      j = 0;
+    while (i < debtors.length && j < creditors.length) {
+      const debtor = debtors[i];
+      const creditor = creditors[j];
+      const payAmount = Math.min(Math.abs(debtor.net), creditor.net);
+      if (payAmount > 0.009)
+        tx.push({
+          from: debtor.name,
+          to: creditor.name,
+          amount: +payAmount.toFixed(2),
+        });
+      debtor.net += payAmount;
+      creditor.net -= payAmount;
+      if (Math.abs(debtor.net) < 0.01) i++;
+      if (creditor.net < 0.01) j++;
+    }
+
+    const totalPaid = Object.values(paidTotals).reduce((s, v) => s + v, 0);
+    const avg = totalPaid / names.length;
+    setSettlements({
+      total: +totalPaid.toFixed(2),
+      avg: +avg.toFixed(2),
+      nets: netsArr,
+      tx,
+    });
   };
 
-  // INPUT HANDLER
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-  };
+  const selectedCount =
+    Object.values(splitSelected).filter(Boolean).length || 0;
+  const amountNumber = Number(form.amount) || 0;
+  const perShare =
+    selectedCount > 0 ? +(amountNumber / selectedCount).toFixed(2) : 0;
 
   // SUBMIT FORM
   const handleSubmit = async (e) => {
@@ -156,7 +196,17 @@ const SubmissionForm = () => {
     setIsSubmitting(true);
 
     try {
-      await axios.post(`${API}/submit`, form);
+      // include split metadata in payload (frontend-only helper fields)
+      const payload = { ...form };
+      if (splitEnabled) {
+        payload.splitWith = Object.keys(splitSelected).filter(
+          (k) => splitSelected[k]
+        );
+        payload.splitCount = selectedCount;
+        payload.splitShare = perShare;
+      }
+
+      await axios.post(`${API}/submit`, payload);
 
       setPopup(true);
       setTimeout(() => setPopup(false), 3000);
@@ -254,6 +304,79 @@ const SubmissionForm = () => {
             />
           </div>
 
+          {/* SPLIT AMOUNT CONTROLS */}
+          <div className='field full' style={{ marginTop: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type='checkbox'
+                checked={splitEnabled}
+                onChange={toggleSplit}
+              />
+              Split amount among selected
+            </label>
+
+            {splitEnabled && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                  <button
+                    type='button'
+                    className='btn btn-ghost'
+                    onClick={() => setSplitDropdownOpen((s) => !s)}
+                  >
+                    Split with ({selectedCount}) ▾
+                  </button>
+
+                  {splitDropdownOpen && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        zIndex: 30,
+                        background: 'white',
+                        border: '1px solid #ddd',
+                        padding: 8,
+                        marginTop: 6,
+                        borderRadius: 6,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                      }}
+                    >
+                      {names.map((n) => (
+                        <label
+                          key={n}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                          }}
+                        >
+                          <input
+                            type='checkbox'
+                            checked={!!splitSelected[n]}
+                            onChange={() => toggleSelectName(n)}
+                          />
+                          {n}
+                        </label>
+                      ))}
+                      <div style={{ marginTop: 8 }}>
+                        <button
+                          type='button'
+                          className='btn'
+                          onClick={() => setSplitDropdownOpen(false)}
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className='small mt-8'>
+                  Per-person share: ₹{perShare} (split across {selectedCount}{' '}
+                  people)
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className='field full'>
             <label>Location (auto-detected)</label>
             <input
@@ -328,96 +451,64 @@ const SubmissionForm = () => {
       </div>
 
       {/* SUMMARY TABLE */}
+      {/* Combined Name-wise Totals & Settlement Summary */}
       <div className='card'>
-        <h3 className='h1'>Name-wise Total Amount</h3>
+        <h3 className='h1'>Name-wise Totals & Settlements</h3>
         <div className='table-wrap'>
           <table>
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Total Amount</th>
+                <th>Paid By</th>
+                <th>Share</th>
+                <th>Net (Paid - Share)</th>
               </tr>
             </thead>
             <tbody>
-              {Object.keys(summary).map((name) => (
-                <tr key={name}>
-                  <td>{name}</td>
-                  <td>{summary[name].toFixed(2)}</td>
-                </tr>
-              ))}
+              {names.map((name) => {
+                const paid = paidTotalsState[name] || 0;
+                const share = summary[name] || 0;
+                const net = +(paid - share).toFixed(2);
+                return (
+                  <tr key={name}>
+                    <td>{name}</td>
+                    <td>₹{paid.toFixed(2)}</td>
+                    <td>₹{share.toFixed(2)}</td>
+                    <td style={{ color: net >= 0 ? 'green' : 'red' }}>
+                      {net >= 0
+                        ? `+₹${net.toFixed(2)}`
+                        : `-₹${Math.abs(net).toFixed(2)}`}
+                    </td>
+                  </tr>
+                );
+              })}
               <tr style={{ fontWeight: 'bold', background: '#f5f5f5' }}>
                 <td>Total</td>
                 <td>
+                  ₹
+                  {Object.values(paidTotalsState)
+                    .reduce((a, b) => a + (b || 0), 0)
+                    .toFixed(2)}
+                </td>
+                <td>
+                  ₹
                   {Object.values(summary)
-                    .reduce((a, b) => a + b, 0)
+                    .reduce((a, b) => a + (b || 0), 0)
+                    .toFixed(2)}
+                </td>
+                <td>
+                  ₹
+                  {Object.values(paidTotalsState)
+                    .reduce((a, b) => a + (b || 0), 0)
                     .toFixed(2)}
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
+
+        
       </div>
-
-      {/* SETTLEMENTS CARD (moved here: appears after Name-wise totals) */}
-      {settlements && settlements.nets && (
-        <div className='card'>
-          <h3 className='h1'>Settlement Summary</h3>
-          <div style={{ marginBottom: 8 }} className='small'>
-            Total: ₹{settlements.total} • Per person: ₹{settlements.avg}
-          </div>
-
-          <div className='table-wrap' style={{ marginBottom: 10 }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Net (Receive + / Owe -)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {settlements.nets.map((n) => (
-                  <tr key={n.name}>
-                    <td>{n.name}</td>
-                    <td style={{ color: n.net >= 0 ? 'green' : 'red' }}>
-                      {n.net >= 0
-                        ? `+₹${n.net.toFixed(2)}`
-                        : `-₹${Math.abs(n.net).toFixed(2)}`}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <h4 className='h1'>Suggested Transfers</h4>
-          <div className='table-wrap'>
-            <table>
-              <thead>
-                <tr>
-                  <th>From</th>
-                  <th>To</th>
-                  <th>Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {settlements.tx && settlements.tx.length > 0 ? (
-                  settlements.tx.map((t, idx) => (
-                    <tr key={idx}>
-                      <td>{t.from}</td>
-                      <td>{t.to}</td>
-                      <td>₹{t.amount.toFixed(2)}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={3}>All settled — no transfers required.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* SUBMISSIONS TABLE */}
       <div className='card'>
@@ -494,6 +585,35 @@ Description: ${s.description || 'N/A'}
           }}
         ></div>
       </div>
+      <h4 className='h1' style={{ marginTop: 12 }}>
+        Final Settlement
+        </h4>
+        <div className='table-wrap'>
+          <table>
+            <thead>
+              <tr>
+                <th>From</th>
+                <th>To</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {settlements && settlements.tx && settlements.tx.length > 0 ? (
+                settlements.tx.map((t, idx) => (
+                  <tr key={idx}>
+                    <td>{t.from}</td>
+                    <td>{t.to}</td>
+                    <td>₹{t.amount.toFixed(2)}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={3}>All settled — no transfers required.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
     </div>
   );
 };
