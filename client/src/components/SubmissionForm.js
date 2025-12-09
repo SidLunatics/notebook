@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
-import axios from "axios";
-import "./SubmissionForm.css";
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import './SubmissionForm.css';
 
 /* global L */ // FIX: allow Leaflet global variable
 
@@ -13,10 +13,10 @@ const SubmissionForm = () => {
     const istDate = new Date(utc + istOffset * 60000);
 
     const year = istDate.getFullYear();
-    const month = String(istDate.getMonth() + 1).padStart(2, "0");
-    const day = String(istDate.getDate()).padStart(2, "0");
-    const hours = String(istDate.getHours()).padStart(2, "0");
-    const minutes = String(istDate.getMinutes()).padStart(2, "0");
+    const month = String(istDate.getMonth() + 1).padStart(2, '0');
+    const day = String(istDate.getDate()).padStart(2, '0');
+    const hours = String(istDate.getHours()).padStart(2, '0');
+    const minutes = String(istDate.getMinutes()).padStart(2, '0');
 
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
@@ -24,21 +24,30 @@ const SubmissionForm = () => {
   const API = process.env.REACT_APP_API_URL;
 
   const [form, setForm] = useState({
-    name: "",
+    name: '',
     date: getISTDateTime(),
-    location: "",
-    amount: "",
-    paymentMode: "Online",
-    description: "",
+    location: '',
+    amount: '',
+    paymentMode: 'Online',
+    description: '',
   });
 
   const [submissions, setSubmissions] = useState([]);
   const [popup, setPopup] = useState(false);
   const [summary, setSummary] = useState({});
+  const [settlements, setSettlements] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const names = ["Siddhesh", "Omkar", "Saurabh", "Soham", "Vaibhav", "Dhanashri", "Shivani"];
-  const paymentModes = ["Online", "Cash"];
+  const names = [
+    'Siddhesh',
+    'Omkar',
+    'Saurabh',
+    'Soham',
+    'Vaibhav',
+    'Dhanashri',
+    'Shivani',
+  ];
+  const paymentModes = ['Online', 'Cash'];
 
   // FETCH GPS + SUBMISSIONS
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -62,7 +71,7 @@ const SubmissionForm = () => {
       setSubmissions(res.data);
       calculateSummary(res.data);
     } catch (err) {
-      console.error("Error fetching submissions", err);
+      console.error('Error fetching submissions', err);
     }
   };
 
@@ -74,6 +83,63 @@ const SubmissionForm = () => {
       totals[item.name] += Number(item.amount);
     });
     setSummary(totals);
+    // compute settlements to equally distribute total among participants
+    const computeSettlements = (totalsMap) => {
+      const names = Object.keys(totalsMap);
+      if (names.length === 0) return [];
+
+      const entries = names.map((n) => ({
+        name: n,
+        amount: Number(totalsMap[n] || 0),
+      }));
+      const total = entries.reduce((s, e) => s + e.amount, 0);
+      const avg = total / entries.length;
+
+      // nets: positive => should receive, negative => should pay
+      const nets = entries.map((e) => ({
+        name: e.name,
+        net: +(e.amount - avg).toFixed(2),
+      }));
+
+      const creditors = nets.filter((n) => n.net > 0).map((n) => ({ ...n }));
+      const debtors = nets.filter((n) => n.net < 0).map((n) => ({ ...n }));
+
+      // sort creditors descending, debtors ascending (most negative first)
+      creditors.sort((a, b) => b.net - a.net);
+      debtors.sort((a, b) => a.net - b.net);
+
+      const tx = [];
+
+      let i = 0;
+      let j = 0;
+
+      while (i < debtors.length && j < creditors.length) {
+        const debtor = debtors[i];
+        const creditor = creditors[j];
+        const payAmount = Math.min(Math.abs(debtor.net), creditor.net);
+
+        if (payAmount > 0.009) {
+          tx.push({
+            from: debtor.name,
+            to: creditor.name,
+            amount: +payAmount.toFixed(2),
+          });
+        }
+
+        // update nets
+        debtor.net += payAmount; // debtor.net is negative
+        creditor.net -= payAmount;
+
+        // advance pointers
+        if (Math.abs(debtor.net) < 0.01) i++;
+        if (creditor.net < 0.01) j++;
+      }
+
+      return { total: +total.toFixed(2), avg: +avg.toFixed(2), nets, tx };
+    };
+
+    const settlementResult = computeSettlements(totals);
+    setSettlements(settlementResult);
   };
 
   // INPUT HANDLER
@@ -96,17 +162,17 @@ const SubmissionForm = () => {
       setTimeout(() => setPopup(false), 3000);
 
       setForm({
-        name: "",
+        name: '',
         date: getISTDateTime(),
         location: form.location,
-        amount: "",
-        paymentMode: "Online",
-        description: "",
+        amount: '',
+        paymentMode: 'Online',
+        description: '',
       });
 
       fetchSubmissions();
     } catch (err) {
-      alert("Error submitting form");
+      alert('Error submitting form');
     }
 
     setTimeout(() => {
@@ -116,7 +182,7 @@ const SubmissionForm = () => {
 
   // DOWNLOAD EXCEL
   const handleDownload = () => {
-    window.open(`${API}/download`, "_blank");
+    window.open(`${API}/download`, '_blank');
   };
 
   // ===========================
@@ -128,116 +194,133 @@ const SubmissionForm = () => {
     const last = submissions[submissions.length - 1];
     if (!last.location) return;
 
-    const [lat, lng] = last.location.split(",").map(Number);
+    const [lat, lng] = last.location.split(',').map(Number);
 
     // FIX: Clear previous map instance
-    const container = L.DomUtil.get("map");
+    const container = L.DomUtil.get('map');
     if (container != null) {
       container._leaflet_id = null;
     }
 
     // Create map
-    const map = L.map("map").setView([lat, lng], 15);
+    const map = L.map('map').setView([lat, lng], 15);
 
     // FREE OpenStreetMap tiles
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
     }).addTo(map);
 
     // Marker
-    L.marker([lat, lng]).addTo(map)
-      .bindPopup("Last Recorded Location 📍")
+    L.marker([lat, lng])
+      .addTo(map)
+      .bindPopup('Last Recorded Location 📍')
       .openPopup();
-
   }, [submissions]);
 
   return (
-    <div className="app-wrap">
-      {popup && <div className="popup">Form Submitted Successfully ✅</div>}
+    <div className='app-wrap'>
+      {popup && <div className='popup'>Form Submitted Successfully ✅</div>}
 
       {/* FORM CARD */}
-      <div className="card">
-        <h2 className="h1">Payment Receipt</h2>
+      <div className='card'>
+        <h2 className='h1'>Payment Receipt</h2>
 
-        <form onSubmit={handleSubmit} className="form-grid">
-          <div className="field">
+        <form onSubmit={handleSubmit} className='form-grid'>
+          <div className='field'>
             <label>Name</label>
-            <select name="name" value={form.name} onChange={handleChange} required>
-              <option value="">Select name</option>
+            <select
+              name='name'
+              value={form.name}
+              onChange={handleChange}
+              required
+            >
+              <option value=''>Select name</option>
               {names.map((n) => (
-                <option key={n} value={n}>{n}</option>
+                <option key={n} value={n}>
+                  {n}
+                </option>
               ))}
             </select>
           </div>
 
-          <div className="field">
+          <div className='field'>
             <label>Date & Time (IST)</label>
             <input
-              type="datetime-local"
-              name="date"
+              type='datetime-local'
+              name='date'
               value={form.date}
               onChange={handleChange}
               required
             />
           </div>
 
-          <div className="field full">
+          <div className='field full'>
             <label>Location (auto-detected)</label>
             <input
-              type="text"
-              name="location"
+              type='text'
+              name='location'
               value={form.location}
               onChange={handleChange}
               required
             />
-            <div className="small mt-8">If GPS blocked, enter manually.</div>
+            <div className='small mt-8'>If GPS blocked, enter manually.</div>
           </div>
 
-          <div className="row">
-            <div className="field">
+          <div className='row'>
+            <div className='field'>
               <label>Amount</label>
               <input
-                type="number"
-                name="amount"
-                min="0"
-                step="0.01"
+                type='number'
+                name='amount'
+                min='0'
+                step='0.01'
                 value={form.amount}
                 onChange={handleChange}
                 required
               />
             </div>
 
-            <div className="field">
+            <div className='field'>
               <label>Payment Mode</label>
               <select
-                name="paymentMode"
+                name='paymentMode'
                 value={form.paymentMode}
                 onChange={handleChange}
                 required
               >
                 {paymentModes.map((m) => (
-                  <option key={m} value={m}>{m}</option>
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
                 ))}
               </select>
             </div>
           </div>
 
-          <div className="field full">
+          <div className='field full'>
             <label>Purpose</label>
             <textarea
-              name="description"
-              rows="2"
+              name='description'
+              rows='2'
               value={form.description}
               onChange={handleChange}
             />
           </div>
 
-          <div className="field full" style={{ display: "flex", gap: 10 }}>
-            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-              {isSubmitting ? "Submitting..." : "Submit"}
+          <div className='field full' style={{ display: 'flex', gap: 10 }}>
+            <button
+              type='submit'
+              className='btn btn-primary'
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Submitting...' : 'Submit'}
             </button>
 
-            <button type="button" onClick={handleDownload} className="btn btn-ghost">
+            <button
+              type='button'
+              onClick={handleDownload}
+              className='btn btn-ghost'
+            >
               Download Excel
             </button>
           </div>
@@ -245,12 +328,15 @@ const SubmissionForm = () => {
       </div>
 
       {/* SUMMARY TABLE */}
-      <div className="card">
-        <h3 className="h1">Name-wise Total Amount</h3>
-        <div className="table-wrap">
+      <div className='card'>
+        <h3 className='h1'>Name-wise Total Amount</h3>
+        <div className='table-wrap'>
           <table>
             <thead>
-              <tr><th>Name</th><th>Total Amount</th></tr>
+              <tr>
+                <th>Name</th>
+                <th>Total Amount</th>
+              </tr>
             </thead>
             <tbody>
               {Object.keys(summary).map((name) => (
@@ -259,10 +345,12 @@ const SubmissionForm = () => {
                   <td>{summary[name].toFixed(2)}</td>
                 </tr>
               ))}
-              <tr style={{ fontWeight: "bold", background: "#f5f5f5" }}>
+              <tr style={{ fontWeight: 'bold', background: '#f5f5f5' }}>
                 <td>Total</td>
                 <td>
-                  {Object.values(summary).reduce((a, b) => a + b, 0).toFixed(2)}
+                  {Object.values(summary)
+                    .reduce((a, b) => a + b, 0)
+                    .toFixed(2)}
                 </td>
               </tr>
             </tbody>
@@ -270,10 +358,71 @@ const SubmissionForm = () => {
         </div>
       </div>
 
+      {/* SETTLEMENTS CARD (moved here: appears after Name-wise totals) */}
+      {settlements && settlements.nets && (
+        <div className='card'>
+          <h3 className='h1'>Settlement Summary</h3>
+          <div style={{ marginBottom: 8 }} className='small'>
+            Total: ₹{settlements.total} • Per person: ₹{settlements.avg}
+          </div>
+
+          <div className='table-wrap' style={{ marginBottom: 10 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Net (Receive + / Owe -)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {settlements.nets.map((n) => (
+                  <tr key={n.name}>
+                    <td>{n.name}</td>
+                    <td style={{ color: n.net >= 0 ? 'green' : 'red' }}>
+                      {n.net >= 0
+                        ? `+₹${n.net.toFixed(2)}`
+                        : `-₹${Math.abs(n.net).toFixed(2)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <h4 className='h1'>Suggested Transfers</h4>
+          <div className='table-wrap'>
+            <table>
+              <thead>
+                <tr>
+                  <th>From</th>
+                  <th>To</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {settlements.tx && settlements.tx.length > 0 ? (
+                  settlements.tx.map((t, idx) => (
+                    <tr key={idx}>
+                      <td>{t.from}</td>
+                      <td>{t.to}</td>
+                      <td>₹{t.amount.toFixed(2)}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={3}>All settled — no transfers required.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* SUBMISSIONS TABLE */}
-      <div className="card">
-        <h3 className="h1">Payments</h3>
-        <div className="table-wrap">
+      <div className='card'>
+        <h3 className='h1'>Payments</h3>
+        <div className='table-wrap'>
           <table>
             <thead>
               <tr>
@@ -292,8 +441,8 @@ const SubmissionForm = () => {
                 <tr key={s._id}>
                   <td>{s.name}</td>
                   <td>
-                    {new Date(s.date).toLocaleString("en-IN", {
-                      timeZone: "Asia/Kolkata",
+                    {new Date(s.date).toLocaleString('en-IN', {
+                      timeZone: 'Asia/Kolkata',
                     })}
                   </td>
                   <td>{s.location}</td>
@@ -302,7 +451,7 @@ const SubmissionForm = () => {
                   <td>{s.description}</td>
                   <td>
                     <button
-                      className="btn btn-whatsapp"
+                      className='btn btn-whatsapp'
                       onClick={() => {
                         const message = `
 Submission Details 📝
@@ -310,15 +459,15 @@ Submission Details 📝
 Name: ${s.name}
 Amount: ₹${s.amount}
 Payment Mode: ${s.paymentMode}
-Date: ${new Date(s.date).toLocaleString("en-IN", {
-                          timeZone: "Asia/Kolkata",
+Date: ${new Date(s.date).toLocaleString('en-IN', {
+                          timeZone: 'Asia/Kolkata',
                         })}
 Location: ${s.location}
-Description: ${s.description || "N/A"}
+Description: ${s.description || 'N/A'}
                         `;
                         window.open(
                           `https://wa.me/?text=${encodeURIComponent(message)}`,
-                          "_blank"
+                          '_blank'
                         );
                       }}
                     >
@@ -333,15 +482,15 @@ Description: ${s.description || "N/A"}
       </div>
 
       {/* MAP SECTION */}
-      <div className="card" style={{ marginTop: "20px" }}>
-        <h3 className="h1">Last Location Map</h3>
+      <div className='card' style={{ marginTop: '20px' }}>
+        <h3 className='h1'>Last Location Map</h3>
         <div
-          id="map"
+          id='map'
           style={{
-            width: "100%",
-            height: "350px",
-            borderRadius: "10px",
-            marginTop: "10px",
+            width: '100%',
+            height: '350px',
+            borderRadius: '10px',
+            marginTop: '10px',
           }}
         ></div>
       </div>
