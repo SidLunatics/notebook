@@ -2,47 +2,60 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './SubmissionForm.css';
 
-/* global L */ // FIX: allow Leaflet global variable
+/* global L */
 
 const SubmissionForm = () => {
-  // GET ACCURATE IST TIME
-  const getISTDateTime = () => {
+  // Return a "datetime-local" compatible string in user's browser local timezone
+  const getLocalDateTime = () => {
     const now = new Date();
-    const istOffset = 330;
-    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-    const istDate = new Date(utc + istOffset * 60000);
-
-    const year = istDate.getFullYear();
-    const month = String(istDate.getMonth() + 1).padStart(2, '0');
-    const day = String(istDate.getDate()).padStart(2, '0');
-    const hours = String(istDate.getHours()).padStart(2, '0');
-    const minutes = String(istDate.getMinutes()).padStart(2, '0');
-
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
 
-  // INPUT HANDLER
+  // Format any Date or ISO string to "10 Dec 2025, 03:30 PM" in IST (Asia/Kolkata)
+  const formatToIST = (dateInput) => {
+    if (!dateInput) return '—';
+    const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+    if (Number.isNaN(d.getTime())) return '—';
+
+    const parts = d.toLocaleString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    // Normalize spacing and commas to ensure stable format "10 Dec 2025, 03:30 PM"
+    return parts.replace(/\s+/g, ' ').replace(' ,', ',').trim();
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Toggle split UI
   const toggleSplit = () => {
     setSplitEnabled((s) => !s);
     setSplitDropdownOpen(true);
   };
 
-  // Toggle a name in the split selection
   const toggleSelectName = (n) => {
     setSplitSelected((prev) => ({ ...prev, [n]: !prev[n] }));
   };
 
-  const API = process.env.REACT_APP_API_URL;
+  const API = process.env.REACT_APP_API_URL || '';
 
   const [form, setForm] = useState({
     name: '',
-    date: getISTDateTime(),
+    // initial value for the datetime-local input (local)
+    date: getLocalDateTime(),
     location: '',
     amount: '',
     paymentMode: 'Online',
@@ -57,7 +70,6 @@ const SubmissionForm = () => {
   const [splitEnabled, setSplitEnabled] = useState(false);
   const [splitDropdownOpen, setSplitDropdownOpen] = useState(false);
   const [expandedSplitRows, setExpandedSplitRows] = useState({});
-  // list of participant names (used by splitSelected initializer)
   const names = [
     'Siddhesh',
     'Omkar',
@@ -70,15 +82,14 @@ const SubmissionForm = () => {
 
   const [splitSelected, setSplitSelected] = useState(() => {
     const map = {};
-    // default all selected
     names.forEach((n) => (map[n] = true));
     return map;
   });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const paymentModes = ['Online', 'Cash'];
 
-  // FETCH GPS + SUBMISSIONS
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Fetch submissions and optionally get GPS
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition((pos) => {
@@ -90,9 +101,9 @@ const SubmissionForm = () => {
     }
 
     fetchSubmissions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // FETCH FROM BACKEND
   const fetchSubmissions = async () => {
     try {
       const res = await axios.get(`${API}/submissions`);
@@ -103,10 +114,7 @@ const SubmissionForm = () => {
     }
   };
 
-  // AUTO CALCULATE SUMMARY
   const calculateSummary = (data) => {
-    // paidTotals: how much each person actually paid
-    // consumedTotals: how much each person should bear
     const paidTotals = {};
     const consumedTotals = {};
     names.forEach((n) => {
@@ -120,11 +128,7 @@ const SubmissionForm = () => {
       if (paidTotals[payer] == null) paidTotals[payer] = 0;
       paidTotals[payer] += amount;
 
-      if (
-        item.splitWith &&
-        Array.isArray(item.splitWith) &&
-        item.splitWith.length > 0
-      ) {
+      if (item.splitWith?.length > 0) {
         const share =
           item.splitShare != null
             ? Number(item.splitShare)
@@ -139,16 +143,14 @@ const SubmissionForm = () => {
       }
     });
 
-    // show consumed totals in Name-wise table
     setSummary(consumedTotals);
-    // also expose paid totals so the UI can show Paid vs Share
     setPaidTotalsState(paidTotals);
 
-    // compute nets and suggested transfers
     const netsArr = names.map((n) => ({
       name: n,
       net: +((paidTotals[n] || 0) - (consumedTotals[n] || 0)).toFixed(2),
     }));
+
     const creditors = netsArr.filter((x) => x.net > 0).map((x) => ({ ...x }));
     const debtors = netsArr.filter((x) => x.net < 0).map((x) => ({ ...x }));
     creditors.sort((a, b) => b.net - a.net);
@@ -185,11 +187,10 @@ const SubmissionForm = () => {
 
   const selectedCount =
     Object.values(splitSelected).filter(Boolean).length || 0;
-  const amountNumber = Number(form.amount) || 0;
   const perShare =
-    selectedCount > 0 ? +(amountNumber / selectedCount).toFixed(2) : 0;
+    selectedCount > 0 ? +((Number(form.amount) || 0) / selectedCount).toFixed(2) : 0;
 
-  // SUBMIT FORM
+  // Submit: treat datetime-local input as IST local time -> convert to UTC instant ISO
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -197,12 +198,31 @@ const SubmissionForm = () => {
     setIsSubmitting(true);
 
     try {
-      // include split metadata in payload (frontend-only helper fields)
       const payload = { ...form };
+
+      if (form.date) {
+        // form.date is "YYYY-MM-DDTHH:MM" (no timezone).
+        // Treat it as IST local time and convert to the correct UTC instant:
+        const [datePart, timePart] = form.date.split('T'); // ["YYYY-MM-DD", "HH:MM"]
+        if (datePart && timePart) {
+          const [y, m, d] = datePart.split('-').map(Number);
+          const [hh, mm] = timePart.split(':').map(Number);
+
+          // IST offset in ms
+          const istOffsetMs = 5.5 * 60 * 60 * 1000; // 19800000
+
+          // Use Date.UTC to get milliseconds for the same numeric Y/M/D/H/M as if they were UTC,
+          // then subtract IST offset to get the actual UTC instant corresponding to that IST local time.
+          const utcForThatIstMs = Date.UTC(y, m - 1, d, hh, mm, 0) - istOffsetMs;
+          payload.date = new Date(utcForThatIstMs).toISOString();
+        } else {
+          // fallback
+          payload.date = new Date(form.date).toISOString();
+        }
+      }
+
       if (splitEnabled) {
-        payload.splitWith = Object.keys(splitSelected).filter(
-          (k) => splitSelected[k]
-        );
+        payload.splitWith = Object.keys(splitSelected).filter((k) => splitSelected[k]);
         payload.splitCount = selectedCount;
         payload.splitShare = perShare;
       }
@@ -214,7 +234,7 @@ const SubmissionForm = () => {
 
       setForm({
         name: '',
-        date: getISTDateTime(),
+        date: getLocalDateTime(),
         location: form.location,
         amount: '',
         paymentMode: 'Online',
@@ -223,6 +243,7 @@ const SubmissionForm = () => {
 
       fetchSubmissions();
     } catch (err) {
+      console.error(err);
       alert('Error submitting form');
     }
 
@@ -231,14 +252,11 @@ const SubmissionForm = () => {
     }, 3000);
   };
 
-  // DOWNLOAD EXCEL
   const handleDownload = () => {
     window.open(`${API}/download`, '_blank');
   };
 
-  // ===========================
-  // LOAD MAP AFTER TABLE
-  // ===========================
+  // Map rendering
   useEffect(() => {
     if (submissions.length === 0) return;
 
@@ -247,21 +265,17 @@ const SubmissionForm = () => {
 
     const [lat, lng] = last.location.split(',').map(Number);
 
-    // FIX: Clear previous map instance
     const container = L.DomUtil.get('map');
     if (container != null) {
       container._leaflet_id = null;
     }
 
-    // Create map
     const map = L.map('map').setView([lat, lng], 15);
 
-    // FREE OpenStreetMap tiles
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
     }).addTo(map);
 
-    // Marker
     L.marker([lat, lng])
       .addTo(map)
       .bindPopup('Last Recorded Location 📍')
@@ -269,23 +283,18 @@ const SubmissionForm = () => {
   }, [submissions]);
 
   return (
-    <div className='app-wrap'>
-      {popup && <div className='popup'>Form Submitted Successfully ✅</div>}
+    <div className="app-wrap">
+      {popup && <div className="popup">Form Submitted Successfully ✅</div>}
 
       {/* FORM CARD */}
-      <div className='card'>
-        <h2 className='h1'>Payment Receipt</h2>
+      <div className="card">
+        <h2 className="h1">Payment Receipt</h2>
 
-        <form onSubmit={handleSubmit} className='form-grid'>
-          <div className='field'>
+        <form onSubmit={handleSubmit} className="form-grid">
+          <div className="field">
             <label>Name</label>
-            <select
-              name='name'
-              value={form.name}
-              onChange={handleChange}
-              required
-            >
-              <option value=''>Select name</option>
+            <select name="name" value={form.name} onChange={handleChange} required>
+              <option value="">Select name</option>
               {names.map((n) => (
                 <option key={n} value={n}>
                   {n}
@@ -294,83 +303,54 @@ const SubmissionForm = () => {
             </select>
           </div>
 
-          <div className='field'>
+          {/* DATE/TIME INPUT */}
+          <div className="field">
             <label>Date & Time (IST)</label>
             <input
-              type='datetime-local'
-              name='date'
+              type="datetime-local"
+              name="date"
               value={form.date}
               onChange={handleChange}
               required
             />
+            <div className="small mt-4">Enter the event time (will be saved as IST and displayed in IST).</div>
           </div>
 
-          {/* SPLIT AMOUNT CONTROLS */}
-          <div className='field' style={{ marginTop: 8 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type='checkbox'
-                checked={splitEnabled}
-                onChange={toggleSplit}
-              />
-              Split amount among selected
+          {/* SPLIT UI */}
+          <div className="field mt-4">
+            <label className="split-checkbox-label">
+              <input type="checkbox" checked={splitEnabled} onChange={toggleSplit} />
+              <span className="checkbox-text">Split amount among selected</span>
             </label>
 
             {splitEnabled && (
-              <div style={{ marginTop: 8 }}>
-                <div
-                  style={{
-                    position: 'relative',
-                    display: 'block',
-                    width: '100%',
-                  }}
-                >
+              <div className="mt-8">
+                <div className="relative">
                   <button
-                    type='button'
-                    className='btn btn-ghost'
+                    type="button"
+                    className="btn btn-ghost dropdown-button"
                     onClick={() => setSplitDropdownOpen((s) => !s)}
-                    style={{ width: '100%', textAlign: 'left' }}
                   >
                     Split with ({selectedCount}) ▾
                   </button>
 
                   {splitDropdownOpen && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        zIndex: 30,
-                        background: 'white',
-                        border: '1px solid #ddd',
-                        padding: 8,
-                        marginTop: 6,
-                        borderRadius: 6,
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-                        width: '100%',
-                        top: '100%',
-                        left: 0,
-                      }}
-                    >
+                    <div className="split-dropdown-menu">
                       {names.map((n) => (
-                        <label
-                          key={n}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                          }}
-                        >
+                        <label key={n} className="split-menu-item">
                           <input
-                            type='checkbox'
+                            type="checkbox"
                             checked={!!splitSelected[n]}
                             onChange={() => toggleSelectName(n)}
                           />
-                          {n}
+                          <span>{n}</span>
                         </label>
                       ))}
-                      <div style={{ marginTop: 8 }}>
+
+                      <div className="split-menu-done">
                         <button
-                          type='button'
-                          className='btn'
+                          type="button"
+                          className="btn"
                           onClick={() => setSplitDropdownOpen(false)}
                         >
                           Done
@@ -380,44 +360,43 @@ const SubmissionForm = () => {
                   )}
                 </div>
 
-                <div className='small mt-8'>
-                  Per-person share: ₹{perShare} (split across {selectedCount}{' '}
-                  people)
+                <div className="small mt-8">
+                  Per-person share: ₹{perShare} (split across {selectedCount} people)
                 </div>
               </div>
             )}
           </div>
 
-          <div className='field full'>
+          <div className="field full">
             <label>Location (auto-detected)</label>
             <input
-              type='text'
-              name='location'
+              type="text"
+              name="location"
               value={form.location}
               onChange={handleChange}
               required
             />
-            <div className='small mt-8'>If GPS blocked, enter manually.</div>
+            <div className="small mt-8">If GPS blocked, enter manually.</div>
           </div>
 
-          <div className='row'>
-            <div className='field'>
+          <div className="row">
+            <div className="field">
               <label>Amount</label>
               <input
-                type='number'
-                name='amount'
-                min='0'
-                step='0.01'
+                type="number"
+                name="amount"
+                min="0"
+                step="0.01"
                 value={form.amount}
                 onChange={handleChange}
                 required
               />
             </div>
 
-            <div className='field'>
+            <div className="field">
               <label>Payment Mode</label>
               <select
-                name='paymentMode'
+                name="paymentMode"
                 value={form.paymentMode}
                 onChange={handleChange}
                 required
@@ -431,30 +410,22 @@ const SubmissionForm = () => {
             </div>
           </div>
 
-          <div className='field full'>
+          <div className="field full">
             <label>Purpose</label>
             <textarea
-              name='description'
-              rows='2'
+              name="description"
+              rows="2"
               value={form.description}
               onChange={handleChange}
             />
           </div>
 
-          <div className='field full' style={{ display: 'flex', gap: 10 }}>
-            <button
-              type='submit'
-              className='btn btn-primary'
-              disabled={isSubmitting}
-            >
+          <div className="field full submit-row">
+            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
               {isSubmitting ? 'Submitting...' : 'Submit'}
             </button>
 
-            <button
-              type='button'
-              onClick={handleDownload}
-              className='btn btn-ghost'
-            >
+            <button type="button" onClick={handleDownload} className="btn btn-ghost">
               Download Excel
             </button>
           </div>
@@ -462,10 +433,9 @@ const SubmissionForm = () => {
       </div>
 
       {/* SUMMARY TABLE */}
-      {/* Combined Name-wise Totals & Settlement Summary */}
-      <div className='card'>
-        <h3 className='h1'>Name-wise Totals & Settlements</h3>
-        <div className='table-wrap'>
+      <div className="card">
+        <h3 className="h1">Name-wise Totals & Settlements</h3>
+        <div className="table-wrap">
           <table>
             <thead>
               <tr>
@@ -485,10 +455,8 @@ const SubmissionForm = () => {
                     <td>{name}</td>
                     <td>₹{paid.toFixed(2)}</td>
                     <td>₹{share.toFixed(2)}</td>
-                    <td style={{ color: net >= 0 ? 'green' : 'red' }}>
-                      {net >= 0
-                        ? `+₹${net.toFixed(2)}`
-                        : `-₹${Math.abs(net).toFixed(2)}`}
+                    <td className={net >= 0 ? 'net-positive' : 'net-negative'}>
+                      {net >= 0 ? `+₹${net.toFixed(2)}` : `-₹${Math.abs(net).toFixed(2)}`}
                     </td>
                   </tr>
                 );
@@ -520,9 +488,9 @@ const SubmissionForm = () => {
       </div>
 
       {/* SUBMISSIONS TABLE */}
-      <div className='card'>
-        <h3 className='h1'>Payments</h3>
-        <div className='table-wrap'>
+      <div className="card">
+        <h3 className="h1">Payments</h3>
+        <div className="table-wrap">
           <table>
             <thead>
               <tr>
@@ -542,62 +510,33 @@ const SubmissionForm = () => {
               {submissions.map((s) => (
                 <tr key={s._id}>
                   <td>{s.name}</td>
-                  <td>
-                    {new Date(s.date).toLocaleString('en-IN', {
-                      timeZone: 'Asia/Kolkata',
-                    })}
-                  </td>
+
+                  {/* show stored date in IST with "10 Dec 2025, 03:30 PM" */}
+                  <td>{s.date ? formatToIST(s.date) : '—'}</td>
+
                   <td>{s.location}</td>
                   <td>₹{s.amount}</td>
-                  <td>
-                    {s.splitShare
-                      ? `₹${s.splitShare.toFixed(2)}`
-                      : `₹${s.amount}`}
-                  </td>
+                  <td>{s.splitShare ? `₹${s.splitShare.toFixed(2)}` : `₹${s.amount}`}</td>
                   <td>{s.paymentMode}</td>
                   <td>
-                    {s.splitWith && s.splitWith.length > 0 ? (
-                      <div
-                        style={{
-                          position: 'relative',
-                          display: 'inline-block',
-                        }}
-                      >
+                    {s.splitWith?.length > 0 ? (
+                      <div className="inline-block" style={{ position: 'relative' }}>
                         <button
-                          type='button'
-                          className='btn btn-ghost'
+                          type="button"
+                          className="btn btn-ghost split-count-btn"
                           onClick={() =>
                             setExpandedSplitRows((prev) => ({
                               ...prev,
                               [s._id]: !prev[s._id],
                             }))
                           }
-                          style={{ padding: '4px 8px', fontSize: '0.9em' }}
                         >
-                          {s.splitWith.length} people{' '}
-                          {expandedSplitRows[s._id] ? '▲' : '▼'}
+                          {s.splitWith.length} people {expandedSplitRows[s._id] ? '▲' : '▼'}
                         </button>
                         {expandedSplitRows[s._id] && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              zIndex: 10,
-                              background: 'white',
-                              border: '1px solid #ddd',
-                              borderRadius: '4px',
-                              padding: '8px',
-                              minWidth: '150px',
-                              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                              top: '100%',
-                              left: 0,
-                              marginTop: '4px',
-                            }}
-                          >
+                          <div className="split-expanded-popup">
                             {s.splitWith.map((name) => (
-                              <div
-                                key={name}
-                                style={{ padding: '4px 0', fontSize: '0.9em' }}
-                              >
+                              <div key={name} style={{ padding: '4px 0' }}>
                                 {name}
                               </div>
                             ))}
@@ -611,7 +550,7 @@ const SubmissionForm = () => {
                   <td>{s.description}</td>
                   <td>
                     <button
-                      className='btn btn-whatsapp'
+                      className="btn btn-whatsapp"
                       onClick={() => {
                         const message = `
 Submission Details 📝
@@ -619,9 +558,7 @@ Submission Details 📝
 Name: ${s.name}
 Amount: ₹${s.amount}
 Payment Mode: ${s.paymentMode}
-Date: ${new Date(s.date).toLocaleString('en-IN', {
-                          timeZone: 'Asia/Kolkata',
-                        })}
+Date: ${s.date ? formatToIST(s.date) : '—'}
 Location: ${s.location}
 Description: ${s.description || 'N/A'}
                         `;
@@ -641,23 +578,15 @@ Description: ${s.description || 'N/A'}
         </div>
       </div>
 
-      {/* MAP SECTION */}
-      <div className='card' style={{ marginTop: '20px' }}>
-        <h3 className='h1'>Last Location Map</h3>
-        <div
-          id='map'
-          style={{
-            width: '100%',
-            height: '350px',
-            borderRadius: '10px',
-            marginTop: '10px',
-          }}
-        ></div>
+      {/* MAP */}
+      <div className="card">
+        <h3 className="h1">Last Location Map</h3>
+        <div id="map" className="map-container"></div>
       </div>
-      <h4 className='h1' style={{ marginTop: 12 }}>
-        Final Settlement
-      </h4>
-      <div className='table-wrap'>
+
+      <h4 className="section-title">Final Settlement</h4>
+
+      <div className="table-wrap">
         <table>
           <thead>
             <tr>

@@ -22,6 +22,16 @@
   font-size: 22px;
 }
 
+/* small helpers */
+.small {
+  font-size: 13px;
+  color: #777;
+}
+
+/* spacing helpers */
+.mt-4 { margin-top: 8px; }
+.mt-8 { margin-top: 16px; }
+
 /* Form Layout */
 .form-grid {
   display: flex;
@@ -71,32 +81,6 @@
   flex: 1;
 }
 
-.small {
-  font-size: 13px;
-  color: #777;
-}
-
-/* SUCCESS POPUP - SIMPLE GREEN */
-.popup {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: #27ae60; /* green */
-  color: white;
-  padding: 14px 30px;
-  border-radius: 10px;
-  font-size: 18px;
-  z-index: 9999;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  animation: fadePopup 0.5s ease-out;
-}
-
-@keyframes fadePopup {
-  from { opacity: 0; transform: translate(-50%, -60%); }
-  to { opacity: 1; transform: translate(-50%, -50%); }
-}
-
 /* Buttons */
 .btn {
   padding: 12px 18px;
@@ -105,6 +89,7 @@
   border: none;
   font-size: 16px;
   transition: 0.3s;
+  background: transparent;
 }
 
 .btn-primary {
@@ -134,12 +119,105 @@
   background: #128C7E;
 }
 
-/* Table Wrap */
+/* smaller button variant used for dropdown toggles */
+.btn--small {
+  padding: 4px 8px;
+  font-size: 0.9em;
+}
+
+/* submit area row (buttons) */
+.submit-row {
+  display: flex;
+  gap: 10px;
+}
+
+/* Dropdowns / popovers */
+.relative {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.dropdown-button {
+  width: 100%;
+  text-align: left;
+}
+
+.split-dropdown-menu {
+  position: absolute;
+  z-index: 30;
+  background: white;
+  border: 1px solid #ddd;
+  padding: 8px;
+  margin-top: 6px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  width: 100%;
+  top: 100%;
+  left: 0;
+}
+
+.split-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.split-menu-done {
+  margin-top: 8px;
+}
+
+/* inline-block helper */
+.inline-block { display: inline-block; }
+
+/* split count button (in payments table) */
+.split-count-btn {
+  padding: 4px 8px;
+  font-size: 0.9em;
+}
+
+/* expanded split popup (per-row) */
+.split-expanded-popup {
+  position: absolute;
+  z-index: 10;
+  background: white;
+  border: 1px solid #ddd;
+  padding: 8px;
+  min-width: 150px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+}
+
+/* popup success */
+.popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #27ae60; /* green */
+  color: white;
+  padding: 14px 30px;
+  border-radius: 10px;
+  font-size: 18px;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  animation: fadePopup 0.5s ease-out;
+}
+
+@keyframes fadePopup {
+  from { opacity: 0; transform: translate(-50%, -60%); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+/* table wrapper */
 .table-wrap {
   overflow-x: auto;
 }
 
-/* Table */
+/* Table styles */
 table {
   width: 100%;
   border-collapse: collapse;
@@ -163,23 +241,41 @@ table tbody tr:nth-child(even) {
   background: #f8f8f8;
 }
 
-/* Mobile responsive */
+/* Map container */
+.map-container {
+  width: 100%;
+  height: 350px;
+  border-radius: 10px;
+  margin-top: 10px;
+}
+
+/* net color classes */
+.net-positive { color: green; }
+.net-negative { color: red; }
+
+/* Section title variant */
+.section-title {
+  margin-top: 12px;
+  text-align: center;
+}
+
+/* Responsive */
 @media (max-width: 768px) {
   .row {
-      flex-direction: column;
+    flex-direction: column;
   }
 
   .app-wrap {
-      padding: 10px;
+    padding: 10px;
   }
 
   table th,
   table td {
-      padding: 8px;
-      font-size: 14px;
+    padding: 8px;
+    font-size: 14px;
   }
 
   .card {
-      padding: 18px;
+    padding: 18px;
   }
 }
